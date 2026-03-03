@@ -5,8 +5,30 @@ text, links, images, tables, and page metadata.
 
 from __future__ import annotations
 
+import copy
+import re
 from urllib.parse import urljoin
 from bs4 import BeautifulSoup, Tag
+
+
+# ── Patterns used to identify noisy sidebar / nav elements ──
+_NOISE_CLASS_PATTERNS = [
+    "sidebar", "nav", "menu", "toc", "breadcrumb",
+    "related", "share", "social", "comment", "ad-",
+    "widget", "footer-", "header-", "cookie",
+]
+
+_MAIN_CONTENT_CLASS_RE = re.compile(
+    r"article[_-]?body|post[_-]?content|entry[_-]?content|"
+    r"article[_-]?content|page[_-]?content|main[_-]?content|"
+    r"text[_-]?container|article[_-]?text",
+    re.IGNORECASE,
+)
+
+_MAIN_CONTENT_ID_RE = re.compile(
+    r"article|content|main|post",
+    re.IGNORECASE,
+)
 
 
 # ─────────────────────────────────────────────────────────
@@ -22,10 +44,69 @@ def parse_html(html: str, parser: str = "lxml") -> BeautifulSoup:
 # Text extraction
 # ─────────────────────────────────────────────────────────
 
+def _has_noise_class(css_classes: list[str] | str | None) -> bool:
+    """Return True if any CSS class matches a known noise pattern."""
+    if not css_classes:
+        return False
+    if isinstance(css_classes, str):
+        css_classes = [css_classes]
+    joined = " ".join(css_classes).lower()
+    return any(p in joined for p in _NOISE_CLASS_PATTERNS)
+
+
+def _strip_noise(work: BeautifulSoup) -> None:
+    """Remove script, style, nav, sidebar, and other non-content elements."""
+    # Remove noise tags entirely
+    for el in work(["script", "style", "noscript", "header", "footer",
+                     "nav", "aside", "form", "iframe"]):
+        el.decompose()
+
+    # Remove elements whose CSS classes match known noise patterns
+    for el in work.find_all(class_=lambda c: _has_noise_class(c)):
+        el.decompose()
+
+    # Remove elements with noise-related roles
+    for role in ("navigation", "banner", "complementary", "contentinfo"):
+        for el in work.find_all(attrs={"role": role}):
+            el.decompose()
+
+
+def _find_main_content(work: BeautifulSoup) -> Tag | None:
+    """Try to locate the primary article / content container."""
+    # 1. <article> tag (most semantic)
+    article = work.find("article")
+    if article and len(article.get_text(strip=True)) > 200:
+        return article
+
+    # 2. <main> tag
+    main = work.find("main")
+    if main and len(main.get_text(strip=True)) > 200:
+        return main
+
+    # 3. Element with a content-related class name
+    by_class = work.find(class_=_MAIN_CONTENT_CLASS_RE)
+    if by_class and len(by_class.get_text(strip=True)) > 200:
+        return by_class
+
+    # 4. Element with a content-related id
+    by_id = work.find(id=_MAIN_CONTENT_ID_RE)
+    if by_id and len(by_id.get_text(strip=True)) > 200:
+        return by_id
+
+    return None
+
+
 def extract_text(soup: BeautifulSoup, tags: list[str] | None = None) -> str:
     """
-    Extract readable text from specific HTML tags.
-    If no tags are specified, extracts all visible text.
+    Extract readable article text from a web page.
+
+    Strategy:
+        1. If *tags* are given, extract text only from those HTML tags.
+        2. Otherwise, strip noise elements (nav, sidebar, ads, …),
+           try to locate the main content container (<article>, <main>,
+           or common article-body class), and extract text from there.
+        3. Falls back to full-page text (with noise stripped) when no
+           main container can be identified.
     """
     if tags:
         parts: list[str] = []
@@ -35,11 +116,18 @@ def extract_text(soup: BeautifulSoup, tags: list[str] | None = None) -> str:
                 if text:
                     parts.append(text)
         return "\n".join(parts)
-    else:
-        # Remove script and style elements
-        for element in soup(["script", "style", "noscript", "header", "footer", "nav"]):
-            element.decompose()
-        return soup.get_text(separator="\n", strip=True)
+
+    # Work on a deep copy so the original soup stays intact
+    work = copy.copy(soup)
+
+    # Strip noise elements (sidebar, nav, ads, etc.)
+    _strip_noise(work)
+
+    # Try to find the main content container
+    main = _find_main_content(work)
+    target = main if main else work
+
+    return target.get_text(separator="\n", strip=True)
 
 
 # ─────────────────────────────────────────────────────────

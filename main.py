@@ -17,6 +17,7 @@ Examples:
 from __future__ import annotations
 
 import argparse
+import re
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -95,6 +96,15 @@ def build_parser() -> argparse.ArgumentParser:
         help="Comma-separated HTML tags to extract (e.g. p,h1,h2,li)",
     )
     return parser
+
+
+def _slugify(text: str, max_length: int = 60) -> str:
+    """Convert a string into a filesystem-safe slug."""
+    text = text.lower().strip()
+    text = re.sub(r"[^\w\s-]", "", text)   # remove non-word chars
+    text = re.sub(r"[\s_]+", "-", text)     # spaces/underscores → hyphens
+    text = re.sub(r"-+", "-", text).strip("-")
+    return text[:max_length] or "scraped_page"
 
 
 # ─────────────────────────────────────────────────────────
@@ -181,16 +191,22 @@ def run(args: argparse.Namespace) -> None:
     console.print("[bold]④ Exporting data…[/bold]")
     fmt = args.format
 
+    # Build a unique filename from the page title + timestamp
+    page_title = metadata.get("title", "scraped_page")
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    base_name = f"{_slugify(page_title)}_{timestamp}"
+    console.print(f"  [dim]File base:[/dim] {base_name}")
+
     if fmt in ("json", "all"):
-        p = export_json(scraped_data, output_dir / "scraped_data.json")
+        p = export_json(scraped_data, output_dir / f"{base_name}.json")
         console.print(f"  [green]✓[/green] JSON  → {p}")
 
     if fmt in ("csv", "all"):
-        p = export_csv(scraped_data, output_dir / "scraped_data.csv")
+        p = export_csv(scraped_data, output_dir / f"{base_name}.csv")
         console.print(f"  [green]✓[/green] CSV   → {p.parent}")
 
     if fmt in ("md", "all"):
-        p = export_markdown(scraped_data, output_dir / "scraped_data.md")
+        p = export_markdown(scraped_data, output_dir / f"{base_name}.md")
         console.print(f"  [green]✓[/green] MD    → {p}")
 
     console.print()
