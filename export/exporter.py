@@ -118,11 +118,7 @@ def export_markdown(data: dict, path: Path) -> Path:
     if text:
         lines.append("## Extracted Text")
         lines.append("")
-        # Truncate for readability
-        preview = text[:5000]
-        lines.append(preview)
-        if len(text) > 5000:
-            lines.append(f"\n*…({len(text) - 5000} more characters)*")
+        lines.append(text)
         lines.append("")
 
     # Links
@@ -130,12 +126,10 @@ def export_markdown(data: dict, path: Path) -> Path:
     if links:
         lines.append(f"## Links ({len(links)} found)")
         lines.append("")
-        for link in links[:100]:  # cap at 100 for readability
+        for link in links:
             text_label = link.get("text", "[no text]")
             href = link.get("href", "")
             lines.append(f"- [{text_label}]({href})")
-        if len(links) > 100:
-            lines.append(f"\n*…and {len(links) - 100} more links*")
         lines.append("")
 
     # Images
@@ -143,12 +137,10 @@ def export_markdown(data: dict, path: Path) -> Path:
     if images:
         lines.append(f"## Images ({len(images)} found)")
         lines.append("")
-        for img in images[:50]:
+        for img in images:
             alt = img.get("alt", "no alt")
             src = img.get("src", "")
             lines.append(f"- `{alt}` → {src}")
-        if len(images) > 50:
-            lines.append(f"\n*…and {len(images) - 50} more images*")
         lines.append("")
 
     # Tables
@@ -156,7 +148,7 @@ def export_markdown(data: dict, path: Path) -> Path:
     if tables:
         lines.append(f"## Tables ({len(tables)} found)")
         lines.append("")
-        for i, table in enumerate(tables[:5]):
+        for i, table in enumerate(tables):
             lines.append(f"### Table {i + 1}")
             lines.append("")
             if table:
@@ -164,12 +156,10 @@ def export_markdown(data: dict, path: Path) -> Path:
                 header = table[0]
                 lines.append("| " + " | ".join(header) + " |")
                 lines.append("| " + " | ".join(["---"] * len(header)) + " |")
-                for row in table[1:20]:  # cap rows
+                for row in table[1:]:
                     # Pad row to match header length
                     padded = row + [""] * (len(header) - len(row))
                     lines.append("| " + " | ".join(padded[:len(header)]) + " |")
-                if len(table) > 20:
-                    lines.append(f"\n*…and {len(table) - 20} more rows*")
             lines.append("")
 
     # Summary (if available)
